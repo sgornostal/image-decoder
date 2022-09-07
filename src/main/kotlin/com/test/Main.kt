@@ -9,5 +9,5 @@ fun main() {
     val eye = ImageIO.read("eye.jpg")
     ImageIO.grayscale(eye)
     ImageIO.gaussianBlur(eye)
-    ImageIO.write("eye-grayscale-blur.jpg", "jpg", eye)
+    ImageIO.write("eye-grayscale-blur.bmp", "bmp", eye)
 }
