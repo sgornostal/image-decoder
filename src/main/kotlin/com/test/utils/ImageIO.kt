@@ -13,6 +13,7 @@ import kotlin.math.min
 
 /**
  * @author Slava Gornostal
+ * @author Anton Kurinnoy
  */
 object ImageIO {
 
@@ -28,7 +29,7 @@ object ImageIO {
         val decoder = when (format) {
             "bmp" -> Bmp
             "png" -> Png
-            "jpeg" -> Jpeg
+            "jpg" -> Jpeg
             else -> throw IllegalStateException("Unsupported format")
         }
         val data = decoder.encode(image)
@@ -47,14 +48,14 @@ object ImageIO {
 
     fun write(filePath: String, format: String, image: Image) {
         val bufferedImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
-        for (i in 0 until image.width) {
-            for (j in 0 until image.height) {
+        for (i in 0 until image.height) {
+            for (j in 0 until image.width) {
                 val newColor = Color(
-                    image[i, j].red(),
-                    image[i, j].green(),
-                    image[i, j].blue()
+                    image[j, i].red(),
+                    image[j, i].green(),
+                    image[j, i].blue()
                 )
-                bufferedImage.setRGB(i, j, newColor.rgb)
+                bufferedImage.setRGB(j, i, newColor.rgb)
             }
         }
         ImageIO.write(bufferedImage, format, File(filePath))
