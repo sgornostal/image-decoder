@@ -1,7 +1,8 @@
 package com.test.reader
 
-import com.test.Image
+import com.test.*
 import com.test.utils.*
+import java.util.*
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.pow
@@ -34,16 +35,31 @@ object Jpeg : ImageDecoder {
     //dri
     private var restartInterval = 0
 
-    override fun canRead(data: ByteArray): Boolean = true
+    override fun canRead(data: ByteArray): Boolean = false
 
     override fun encode(image: Image): ByteArray {
 
-        val stream = ByteStreamWriter()
+
         val y = mutableListOf<Int>()
         val cb = mutableListOf<Int>()
         val cr = mutableListOf<Int>()
 
         val colors = image.colors.toMutableList().chunked(image.width).map { it.toMutableList() }
+
+        for (i in colors.indices) {
+            colors[i].forEach {
+                val color: Color = it
+                /*print(color.red())
+                print(" ")
+                print(color.green())
+                print(" ")
+                println(color.blue())*/
+                val yCbCr = convertRGBtoYCbCr(color.red(), color.green(), color.blue())
+                y.add(yCbCr[0])
+                cb.add(yCbCr[1])
+                cr.add(yCbCr[2])
+            }
+        }
 
         val horizontal = 8 - image.width % 8
         val vertical = 8 - image.height % 8
@@ -56,19 +72,11 @@ object Jpeg : ImageDecoder {
             (1..vertical).forEach { _ -> colors.toMutableList().add(colors.last()) }
         }
 
-        for (i in colors.indices) {
-            colors[i].forEach {
-                val yCbCr = convertRGBtoYCbCr(it shr 0, it shr 8, it shr 16)
-                y.add(yCbCr[0])
-                cb.add(yCbCr[1])
-                cr.add(yCbCr[2])
-            }
-        }
-
         val yTable = y.chunked(colors[0].size).map { it.toMutableList() }
-        val cbTable = cb.chunked(colors[0].size).map { it.toMutableList() }
-        val crTable = cr.chunked(colors[0].size).map { it.toMutableList() }
-        for (i in cbTable.indices step 2) {
+        val cbTable = cb.chunked(colors[0].size).map { it.toMutableList().filterIndexed { index, _ -> index % 2 == 0} }.filterIndexed { index, _ -> index % 2 == 0}
+        val crTable = cr.chunked(colors[0].size).map { it.toMutableList().filterIndexed { index, _ -> index % 2 == 0} }.filterIndexed { index, _ -> index % 2 == 0}
+
+        /*for (i in cbTable.indices step 2) {
             for (j in 0 until cbTable[i].size step 2) {
                 val sredneeCb = (cbTable[i][j] + cbTable[i][j + 1] + cbTable[i + 1][j] + cbTable[i + 1][j + 1]) / 4
                 cbTable[i][j] = sredneeCb
@@ -81,42 +89,280 @@ object Jpeg : ImageDecoder {
                 crTable[i + 1][j] = sredneeCr
                 crTable[i + 1][j + 1] = sredneeCr
             }
-        }
+        }*/
+
 
         val horiz = colors[0].size / 8
         val vert = colors.size / 8
         val blockCount = horiz * vert
 
         val yMCU = MutableList(blockCount) { Block() }
-        val cbMCU = MutableList(blockCount) { Block() }
-        val crMCU = MutableList(blockCount) { Block() }
+        val cbMCU = MutableList(blockCount / 4) { Block() }
+        val crMCU = MutableList(blockCount / 4) { Block() }
 
+        val allMCU = MutableList(yMCU.size + cbMCU.size + crMCU.size) { Block() }
 
-        for (i in cbTable.indices) {
-            for (j in 0..cbTable[i].size) {
-                val blockNumber = j + j * (i / 8)
-                yMCU[blockNumber].set(i, j, yTable[i][j] - 128)
-                cbMCU[blockNumber].set(i, j, cbTable[i][j] - 128)
-                crMCU[blockNumber].set(i, j, crTable[i][j] - 128)
+        var n = 0
+        var m = 0
+        for (i in yTable.indices) {
+            for (j in 0 until yTable[i].size) {
+                val blockNumber = i / 8 * vert + (j / 8 + 1)
+                if (m > 7) m = 0
+                yMCU[blockNumber - 1].set(n, m++, yTable[i][j] - 128)
             }
+            n++
+            if (n > 7) n = 0
+        }
+
+        n = 0
+        m = 0
+        for (i in cbTable.indices) {
+            for (j in 0 until cbTable[i].size) {
+                val blockNumber = i / 8 * vert / 2 + (j / 8 + 1)
+                if (m > 7) m = 0
+                cbMCU[blockNumber - 1].set(n, m++, cbTable[i][j] - 128)
+                crMCU[blockNumber - 1].set(n, m++, crTable[i][j] - 128)
+            }
+            n++
+            if (n > 7) n = 0
         }
 
         yMCU.forEach { it.dctTransform() }
         cbMCU.forEach { it.dctTransform() }
         crMCU.forEach { it.dctTransform() }
 
-        yMCU.forEach { it.quantization() }
-        cbMCU.forEach { it.quantization() }
-        crMCU.forEach { it.quantization() }
+        yMCU.forEach { it.quantization(0) }
+        cbMCU.forEach { it.quantization(1) }
+        crMCU.forEach { it.quantization(1) }
 
         yMCU.forEach { it.zigzag() }
         cbMCU.forEach { it.zigzag() }
         crMCU.forEach { it.zigzag() }
 
+        var l = 0
+        var k = 0
+        val yMCUchunked = yMCU.chunked(horiz)
+        var index = 0
+        (0 until allMCU.size step 6).forEach { _ ->
+            allMCU[index] = yMCUchunked[k][l + 0]
+            allMCU[index + 1] = yMCUchunked[k][l + 1]
+            allMCU[index + 2] = yMCUchunked[k + 1][l + 0]
+            allMCU[index + 3] = yMCUchunked[k + 1][l + 1]
+            l += 2
+            if (l >= horiz){
+                l = 0
+                k += 2
+            }
+
+            allMCU[index + 4] = cbMCU[0]
+            allMCU[index + 5] = crMCU[0]
+            cbMCU.removeAt(0)
+            crMCU.removeAt(0)
+            index += 6
+        }
+
+        val setYDC = yMCU.map { it.getDC() }.toSet() // aka symbols
+        val setYAC = yMCU.map { it.getAC() }.flatten().toSet() // aka symbols
+
+        val setCbDC = cbMCU.map { it.getDC() }.toSet()
+        val setCrDC = crMCU.map { it.getDC() }.toSet()
+        val setCbCrDC = setCbDC + setCrDC // aka symbols
+
+        val setCbAC = cbMCU.map { it.getAC() }.flatten().toSet()
+        val setCrAC = crMCU.map { it.getAC() }.flatten().toSet()
+        val setCbCrAC = setCbAC + setCrAC // aka symbols
+
+        val frequenciesYDC = IntArray(16) {0}
+        setYDC.forEach { frequenciesYDC[it] += 1 }
+        val frequenciesYAC = IntArray(162) {0}
+        setYAC.forEach { frequenciesYAC[it] += 1 }
+        val frequenciesCbCrDC = IntArray(16) {0}
+        setCbCrDC.forEach { frequenciesCbCrDC[it] += 1 }
+        val frequenciesCbCrAC = IntArray(162) {0}
+        setCbCrAC.forEach { frequenciesCbCrAC[it] += 1 }
+
+        var rootNode: HuffmanNode? = HuffmanNode.encode(setYDC.toIntArray(), frequenciesYDC)
+        var codes = HuffmanNode.getCodes(rootNode!!)
+        val numberOfCodesYDC = Array(codes.size) {0} // length
+        codes.forEach { numberOfCodesYDC[it.length] += 1 }
+//        HuffmanNode.printCode(rootNode)
+//        codes.forEach { println(it.length) }
+//        numberOfCodes.forEach { println(it) }
+
+        rootNode = HuffmanNode.encode(setYAC.toIntArray(), frequenciesYAC)
+        codes = HuffmanNode.getCodes(rootNode!!)
+        val numberOfCodesYAC = Array(codes.size) {0} // length
+        codes.forEach { numberOfCodesYAC[it.length] += 1 }
 
 
+        rootNode = HuffmanNode.encode(setCbCrDC.toIntArray(), frequenciesCbCrDC)
+        codes = HuffmanNode.getCodes(rootNode!!)
+        val numberOfCodesCbCrDC = Array(codes.size) {0} // length
+        codes.forEach { numberOfCodesCbCrDC[it.length] += 1 }
+
+        rootNode = HuffmanNode.encode(setCbCrAC.toIntArray(), frequenciesCbCrAC)
+        codes = HuffmanNode.getCodes(rootNode!!)
+        val numberOfCodesCbCrAC = Array(codes.size) {0} // length
+        codes.forEach { numberOfCodesCbCrAC[it.length] += 1 }
+
+        //очень вероятно, шо это надо переделать
+        val huffmanTables1 = numberOfCodesYDC.map { it.toByte() }.toByteArray() + setYDC.map { it.toByte() }.toByteArray()
+        val huffmanTables2 = numberOfCodesYAC.map { it.toByte() }.toByteArray() + setYAC.map { it.toByte() }.toByteArray()
+        val huffmanTables3 = numberOfCodesCbCrDC.map { it.toByte() }.toByteArray() + setCbCrDC.map { it.toByte() }.toByteArray()
+        val huffmanTables4 = numberOfCodesCbCrAC.map { it.toByte() }.toByteArray() + setCbCrAC.map { it.toByte() }.toByteArray()
+
+
+        val stream = ByteStreamWriter()
+        val data = byteArrayOf()
+        yMCU.map { it.toByteArray() }.forEach { data + it }
+        cbMCU.map { it.toByteArray() }.forEach { data + it }
+        crMCU.map { it.toByteArray() }.forEach { data + it }
+
+        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xD8.toByte()))
+        writeApp(stream)
+        writeDQT(stream, yMCU.first().getQuantTables())
+        writeDHT(stream, huffmanTables1, 0x00.toByte())
+        writeDHT(stream, huffmanTables2, 0x10.toByte())
+        writeDHT(stream, huffmanTables3, 0x01.toByte())
+        writeDHT(stream, huffmanTables4, 0x11.toByte())
+        writeSOF(stream)
+        writeSOS(stream, data)
+        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+
+        println("end")
 
         return byteArrayOf()
+    }
+
+    private fun writeSOS(stream: ByteStreamWriter, data: ByteArray) {
+        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xDA.toByte()))
+        stream.write2bytes(12)
+        stream.writeInt(3) //number of channels Y Cb Cr
+        stream.writeInt(1) // Y
+        stream.writeByte(0x00.toByte())
+        stream.writeInt(2) // Cb
+        stream.writeByte(0x11.toByte())
+        stream.writeInt(3) // Cr
+        stream.writeByte(0x11.toByte())
+        stream.writeInt(0)
+        stream.writeInt(63)
+        stream.writeInt(0)
+        stream.writeByteArray(data)
+    }
+
+    private fun writeSOF(stream: ByteStreamWriter) {
+        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xC0.toByte()))
+        stream.write2bytes(22)
+        stream.writeInt(8) //precision
+        stream.writeInt(height)
+        stream.writeInt(width)
+        stream.writeInt(3)
+        stream.writeInt(1) // component id
+        stream.writeByte(0x22.toByte()) // sampling factor
+        stream.writeByte(0x00.toByte()) // quantization table id
+        stream.writeInt(2) // component id
+        stream.writeByte(0x11.toByte()) // sampling factor
+        stream.writeByte(0x01.toByte()) // quantization table id
+        stream.writeInt(3) // component id
+        stream.writeByte(0x11.toByte()) // sampling factor
+        stream.writeByte(0x01.toByte()) // quantization table id
+    }
+
+    private fun writeDHT(stream: ByteStreamWriter, data: ByteArray, byte: Byte) {
+        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xC4.toByte()))
+        stream.write2bytes(data.size + 3)
+        stream.writeByte(byte)
+        stream.writeByteArray(data)
+    }
+
+    private fun writeDQT(stream: ByteStreamWriter, data: ByteArray) {
+        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xDB.toByte()))
+        stream.writeByteArray(byteArrayOf(0x00.toByte(), 0x84.toByte())) // 84 - hexdecimal, 132 - decimal, 64*2+2 + 2(length)
+        stream.writeByteArray(data)
+    }
+
+    private fun writeApp(stream: ByteStreamWriter) {
+        val JFIF = ByteArray(2)
+        JFIF[0] = 0xff.toByte()
+        JFIF[1] = 0xe0.toByte()
+        stream.writeByteArray(JFIF)
+    }
+
+    class HuffmanNode : Comparable<HuffmanNode> {
+        var freq = 0
+        var int = 0
+
+        var left: HuffmanNode? = null
+        var right: HuffmanNode? = null
+
+        companion object {
+            // recursive function to print the
+            // huffman-code through the tree traversal.
+            // Here s is the huffman - code generated.
+
+            fun encode(charArray: IntArray, charFreq: IntArray): HuffmanNode? {
+                val numCharacters = charArray.size
+
+                // makes a min-priority queue(min-heap)
+                val pQueue = PriorityQueue(numCharacters, HuffmanNode::compareTo)
+
+                for (i in 0 until numCharacters) {
+                    val huffNode = HuffmanNode()
+
+                    huffNode.int = charArray[i]
+                    huffNode.freq = charFreq[i]
+
+                    huffNode.left = null
+                    huffNode.right = null
+
+                    pQueue.add(huffNode)
+                }
+
+                var rootNode: HuffmanNode? = null
+
+                // Here we will extract the two minimum value
+                // from the heap each time until
+                // its size reduces to 1, extract until
+                // all the nodes are extracted.
+                while (pQueue.size > 1) {
+
+                    val first = pQueue.poll()
+                    val second = pQueue.poll()
+                    val newHuffNode = HuffmanNode()
+
+                    newHuffNode.freq = first.freq + second.freq
+                    newHuffNode.int = -1
+
+                    newHuffNode.left = first
+                    newHuffNode.right = second
+
+                    rootNode = newHuffNode
+                    pQueue.add(newHuffNode)
+                }
+                return rootNode
+            }
+
+            private val codes = mutableListOf<String>()
+            fun getCodes(root: HuffmanNode): List<String> {
+                makeCodes(root, "")
+                return codes.toList()
+            }
+            private fun makeCodes(root: HuffmanNode, s: String){
+                if (root.left == null
+                    && root.right == null
+                    && root.int != -1
+                ) {
+                    codes.add(s)
+                    return
+                }
+
+                makeCodes(root.left!!, "${s}0")
+                makeCodes(root.right!!, "${s}1")
+            }
+        }
+
+        override fun compareTo(other: HuffmanNode) =
+            this.freq - other.freq
     }
 
     override fun decode(data: ByteArray): Image {
@@ -442,7 +688,7 @@ object Jpeg : ImageDecoder {
 }
 
 class Block {
-    private var q: Array<IntArray> = arrayOf(
+    private var qY: Array<IntArray> = arrayOf(
         intArrayOf(16, 11, 10, 16, 24, 40, 51, 61),
         intArrayOf(12, 12, 14, 19, 26, 58, 60, 55),
         intArrayOf(14, 13, 16, 24, 40, 57, 69, 56),
@@ -452,6 +698,18 @@ class Block {
         intArrayOf(49, 64, 78, 87, 103, 121, 120, 101),
         intArrayOf(72, 92, 95, 98, 112, 100, 103, 99)
     )
+    private var qCbCr: Array<IntArray> = arrayOf(
+        intArrayOf(17, 18, 24, 47, 99, 99, 99, 99),
+        intArrayOf(18, 21, 26, 66, 99, 99, 99, 99),
+        intArrayOf(24, 26, 56, 99, 99, 99, 99, 99),
+        intArrayOf(47, 66, 99, 99, 99, 99, 99, 99),
+        intArrayOf(99, 99, 99, 99, 99, 99, 99, 99),
+        intArrayOf(99, 99, 99, 99, 99, 99, 99, 99),
+        intArrayOf(99, 99, 99, 99, 99, 99, 99, 99),
+        intArrayOf(99, 99, 99, 99, 99, 99, 99, 99)
+    )
+
+    private val quantizationTable = arrayOf(qY, qCbCr)
 
     val zigzag = arrayOf(
         intArrayOf(0, 1, 5, 6, 14, 15, 27, 28),
@@ -478,14 +736,22 @@ class Block {
         return data[height][width]
     }
 
+    fun getDC(): Int {
+        return zzData.first()
+    }
+
+    fun getQuantTables(): ByteArray {
+        return quantizationTable.flatten().map { it.toList() }.flatten().map { it.toByte() }.toByteArray()
+    }
+
     fun dctTransform() {
         var ci: Double
         var cj: Double
         var dct1: Double
         var sum: Double
 
-        for (i in 0..8) {
-            for (j in 0..8) {
+        for (i in 0 until 8) {
+            for (j in 0 until 8) {
                 val a = sqrt(8.0)
                 val b = sqrt(2.0)
                 ci = when (i) {
@@ -498,8 +764,8 @@ class Block {
                 }
 
                 sum = 0.0
-                for (x in 0..8) {
-                    for (y in 0..8) {
+                for (x in 0 until 8) {
+                    for (y in 0 until 8) {
                         dct1 = this.get(x, y) *
                                 cos((2 * x + 1) * i * Math.PI / 16) *
                                 cos((2 * y + 1) * j * Math.PI / 16)
@@ -511,10 +777,10 @@ class Block {
         }
     }
 
-    fun quantization() {
-        for (i in 0..8) {
-            for (j in 0..8) {
-                this.set(i, j, this.get(i, j) / q[i][j])
+    fun quantization(type: Int) {
+        for (i in 0 until 8) {
+            for (j in 0 until 8) {
+                this.set(i, j, this.get(i, j) / quantizationTable[type][i][j])
             }
         }
     }
@@ -522,8 +788,8 @@ class Block {
     fun zigzag() {
         val zz1d = mutableListOf<Int>()
         val data1d = mutableListOf<Int>()
-        for (i in 0..8) {
-            for (j in 0..8) {
+        for (i in 0 until 8) {
+            for (j in 0 until 8) {
                 zz1d.add(zigzag[i][j])
                 data1d.add(this.get(i, j))
             }
@@ -533,4 +799,26 @@ class Block {
             zzData[i] = data1d[zz1d[i]]
         }
     }
+
+    fun getAC(): Set<Int> {
+        return zzData.drop(0).toSet()
+    }
+
+    fun getZZData(): Array<Int> {
+        return zzData
+    }
+
+    fun toByteArray(): ByteArray {
+        return zzData.map { it.toByte() }.toByteArray()
+    }
 }
+
+
+
+
+
+
+
+
+
+
