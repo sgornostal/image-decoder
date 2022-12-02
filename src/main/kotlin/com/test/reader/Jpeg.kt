@@ -1,8 +1,11 @@
 package com.test.reader
 
+import com.soywiz.korio.dynamic.KDynamic.Companion.toLong
+import com.soywiz.korio.stream.*
 import com.test.*
 import com.test.utils.*
 import java.util.*
+import kotlin.collections.HashMap
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.pow
@@ -35,29 +38,24 @@ object Jpeg : ImageDecoder {
     //dri
     private var restartInterval = 0
 
-    override fun canRead(data: ByteArray): Boolean = false
+    override fun canRead(data: ByteArray): Boolean = true
 
     override fun encode(image: Image): ByteArray {
 
 
         val y = mutableListOf<Int>()
-        val cb = mutableListOf<Int>()
-        val cr = mutableListOf<Int>()
+//        val cb = mutableListOf<Int>()
+//        val cr = mutableListOf<Int>()
 
         val colors = image.colors.toMutableList().chunked(image.width).map { it.toMutableList() }
 
         for (i in colors.indices) {
             colors[i].forEach {
                 val color: Color = it
-                /*print(color.red())
-                print(" ")
-                print(color.green())
-                print(" ")
-                println(color.blue())*/
                 val yCbCr = convertRGBtoYCbCr(color.red(), color.green(), color.blue())
                 y.add(yCbCr[0])
-                cb.add(yCbCr[1])
-                cr.add(yCbCr[2])
+//                cb.add(yCbCr[1])
+//                cr.add(yCbCr[2])
             }
         }
 
@@ -73,8 +71,8 @@ object Jpeg : ImageDecoder {
         }
 
         val yTable = y.chunked(colors[0].size).map { it.toMutableList() }
-        val cbTable = cb.chunked(colors[0].size).map { it.toMutableList().filterIndexed { index, _ -> index % 2 == 0} }.filterIndexed { index, _ -> index % 2 == 0}
-        val crTable = cr.chunked(colors[0].size).map { it.toMutableList().filterIndexed { index, _ -> index % 2 == 0} }.filterIndexed { index, _ -> index % 2 == 0}
+//        val cbTable = cb.chunked(colors[0].size).map { it.toMutableList().filterIndexed { index, _ -> index % 2 == 0} }.filterIndexed { index, _ -> index % 2 == 0}
+//        val crTable = cr.chunked(colors[0].size).map { it.toMutableList().filterIndexed { index, _ -> index % 2 == 0} }.filterIndexed { index, _ -> index % 2 == 0}
 
         /*for (i in cbTable.indices step 2) {
             for (j in 0 until cbTable[i].size step 2) {
@@ -97,10 +95,10 @@ object Jpeg : ImageDecoder {
         val blockCount = horiz * vert
 
         val yMCU = MutableList(blockCount) { Block() }
-        val cbMCU = MutableList(blockCount / 4) { Block() }
-        val crMCU = MutableList(blockCount / 4) { Block() }
+//        val cbMCU = MutableList(blockCount / 4) { Block() }
+//        val crMCU = MutableList(blockCount / 4) { Block() }
 
-        val allMCU = MutableList(yMCU.size + cbMCU.size + crMCU.size) { Block() }
+//        val allMCU = MutableList(yMCU.size + cbMCU.size + crMCU.size) { Block() }
 
         var n = 0
         var m = 0
@@ -114,7 +112,7 @@ object Jpeg : ImageDecoder {
             if (n > 7) n = 0
         }
 
-        n = 0
+        /*n = 0
         m = 0
         for (i in cbTable.indices) {
             for (j in 0 until cbTable[i].size) {
@@ -125,21 +123,21 @@ object Jpeg : ImageDecoder {
             }
             n++
             if (n > 7) n = 0
-        }
+        }*/
 
         yMCU.forEach { it.dctTransform() }
-        cbMCU.forEach { it.dctTransform() }
-        crMCU.forEach { it.dctTransform() }
+//        cbMCU.forEach { it.dctTransform() }
+//        crMCU.forEach { it.dctTransform() }
 
         yMCU.forEach { it.quantization(0) }
-        cbMCU.forEach { it.quantization(1) }
-        crMCU.forEach { it.quantization(1) }
+//        cbMCU.forEach { it.quantization(1) }
+//        crMCU.forEach { it.quantization(1) }
 
         yMCU.forEach { it.zigzag() }
-        cbMCU.forEach { it.zigzag() }
-        crMCU.forEach { it.zigzag() }
+//        cbMCU.forEach { it.zigzag() }
+//        crMCU.forEach { it.zigzag() }
 
-        var l = 0
+        /*var l = 0
         var k = 0
         val yMCUchunked = yMCU.chunked(horiz)
         var index = 0
@@ -159,134 +157,519 @@ object Jpeg : ImageDecoder {
             cbMCU.removeAt(0)
             crMCU.removeAt(0)
             index += 6
+        }*/
+
+        val frequenciesYDC = HashMap<Int, Int>()
+        yMCU.map { it.getDC() }.forEach {
+            var count = frequenciesYDC[it]
+            if (count == null) count = 0
+            frequenciesYDC[it] = count + 1
         }
+        val frequenciesYAC = HashMap<Int, Int>()
+        yMCU.map { it.getAC() }.flatten().forEach {
+            var count = frequenciesYAC[it]
+            if (count == null) count = 0
+            frequenciesYAC[it] = count!! + 1
+        }
+        /*val frequenciesCbCrDC = HashMap<Int, Int>()
+        cbMCU.map { it.getDC() }.forEach {
+            var count = frequenciesCbCrDC[it]
+            if (count == null) count = 0
+            frequenciesCbCrDC[it] = count!! + 1
+        }
+        crMCU.map { it.getDC() }.forEach {
+            var count = frequenciesCbCrDC[it]
+            if (count == null) count = 0
+            frequenciesCbCrDC[it] = count!! + 1
+        }
+        val frequenciesCbCrAC = HashMap<Int, Int>()
+        cbMCU.map { it.getAC() }.flatten().forEach {
+            var count = frequenciesCbCrAC[it]
+            if (count == null) count = 0
+            frequenciesCbCrAC[it] = count!! + 1
+        }
+        crMCU.map { it.getAC() }.flatten().forEach {
+            var count = frequenciesCbCrAC[it]
+            if (count == null) count = 0
+            frequenciesCbCrAC[it] = count!! + 1
+        }*/
 
-        val setYDC = yMCU.map { it.getDC() }.toSet() // aka symbols
-        val setYAC = yMCU.map { it.getAC() }.flatten().toSet() // aka symbols
+//        var rootNode: HuffmanNode? = HuffmanNode.encode(intArrayOf(1,2,3,4,5,6), intArrayOf(5,9,12,13,16,45))
+//        var codes = HuffmanNode.getCodes(rootNode!!)
+//        println(codes)
+//        codes.forEach { i, s ->
+//            println("i: $i => s: $s")
+//        }
+//        println("end")
 
-        val setCbDC = cbMCU.map { it.getDC() }.toSet()
-        val setCrDC = crMCU.map { it.getDC() }.toSet()
-        val setCbCrDC = setCbDC + setCrDC // aka symbols
 
-        val setCbAC = cbMCU.map { it.getAC() }.flatten().toSet()
-        val setCrAC = crMCU.map { it.getAC() }.flatten().toSet()
-        val setCbCrAC = setCbAC + setCrAC // aka symbols
+        val allDC = yMCU.map { it.getDC() }.toIntArray()
+        val differencesDC = IntArray(allDC.size)
+        for (i in allDC.indices){
+            if (i != 0){
+                differencesDC[i] = allDC[i] - allDC[i-1]
+            }
+        }
+        differencesDC[0] = allDC[0] //возможно это лишнее, инфа по этому поводу противоречивая
+        val differencesDCCodes =  differencesDC.map { getCodeForDC(it) }
 
-        val frequenciesYDC = IntArray(16) {0}
-        setYDC.forEach { frequenciesYDC[it] += 1 }
-        val frequenciesYAC = IntArray(162) {0}
-        setYAC.forEach { frequenciesYAC[it] += 1 }
-        val frequenciesCbCrDC = IntArray(16) {0}
-        setCbCrDC.forEach { frequenciesCbCrDC[it] += 1 }
-        val frequenciesCbCrAC = IntArray(162) {0}
-        setCbCrAC.forEach { frequenciesCbCrAC[it] += 1 }
+//        var rootNode: HuffmanNode? = HuffmanNode.encode(frequenciesYDC.keys.toIntArray(), frequenciesYDC.values.toIntArray())
+//        var codes = HuffmanNode.getCodes(rootNode!!)
+//        val numberOfCodesYDC = Array(16) {0} // length
+//        codes.forEach { numberOfCodesYDC[it.value.length-1] += 1 } //почему обычно первый идёт 0?
+//        var sortedValues = codes.toList().sortedBy { (_, value) -> value.length }.toMap().keys // aka symbols
+//        val huffmanTables1 = numberOfCodesYDC.map { it.toByte() }.toByteArray() + sortedValues.map { it.toByte() }.toByteArray()
+//        val huffmanTables1Length = numberOfCodesYDC.size + numberOfCodesYDC.sum()
+//        val huffmanTables1 = intArrayOf(0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11).map { it.toByte() }.toByteArray()
+        val huffmanTables1 = intArrayOf(1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,4,2,6).map { it.toByte() }.toByteArray()
 
-        var rootNode: HuffmanNode? = HuffmanNode.encode(setYDC.toIntArray(), frequenciesYDC)
-        var codes = HuffmanNode.getCodes(rootNode!!)
-        val numberOfCodesYDC = Array(codes.size) {0} // length
-        codes.forEach { numberOfCodesYDC[it.length] += 1 }
-//        HuffmanNode.printCode(rootNode)
-//        codes.forEach { println(it.length) }
-//        numberOfCodes.forEach { println(it) }
+//        rootNode = HuffmanNode.encode(frequenciesYAC.keys.toIntArray(), frequenciesYAC.values.toIntArray())
+//        codes = HuffmanNode.getCodes(rootNode!!)
+//        val numberOfCodesYAC = Array(162) {0} // length
+//        codes.forEach { numberOfCodesYAC[it.value.length] += 1 }
+//        sortedValues = codes.toList().sortedBy { (_, value) -> value.length }.toMap().keys // aka symbols
+//        val huffmanTables2 = numberOfCodesYAC.map { it.toByte() }.toByteArray() + sortedValues.map { it.toByte() }.toByteArray()
+//        val huffmanTables2Length = numberOfCodesYAC.size + numberOfCodesYAC.sum()
+//        val huffmanTables2 = intArrayOf(0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 125, 1, 2, 3, 0, 4, 17, 5, 18, 33, 49, 65, 6, 19, 81, 97, 7, 34, 113, 20, 50, 129, 145, 161, 8, 35, 66, 177, 193, 21, 82, 209, 240, 36, 51, 98, 114, 130, 9, 10, 22, 23, 24, 25, 26, 37, 38, 39, 40, 41, 42, 52, 53, 54, 55, 56, 57, 58, 67, 68, 69, 70, 71, 72, 73, 74, 83, 84, 85, 86, 87, 88, 89, 90, 99, 100, 101, 102, 103, 104, 105, 106, 115, 116, 117, 118, 119, 120, 121, 122, 131, 132, 133, 134, 135, 136, 137, 138, 146, 147, 148, 149, 150, 151, 152, 153, 154, 162, 163, 164, 165, 166, 167, 168, 169, 170, 178, 179, 180, 181, 182, 183, 184, 185, 186, 194, 195, 196, 197, 198, 199, 200, 201, 202, 210, 211, 212, 213, 214, 215, 216, 217, 218, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250).map { it.toByte() }.toByteArray()
+        val huffmanTables2 = intArrayOf(0,2,2,3,1,0,0,0,0,0,0,0,0,0,0,0,1,2,3,17,0,4,33,34).map { it.toByte() }.toByteArray()
 
-        rootNode = HuffmanNode.encode(setYAC.toIntArray(), frequenciesYAC)
+        /*rootNode = HuffmanNode.encode(frequenciesCbCrDC.keys.toIntArray(), frequenciesCbCrDC.values.toIntArray())
         codes = HuffmanNode.getCodes(rootNode!!)
-        val numberOfCodesYAC = Array(codes.size) {0} // length
-        codes.forEach { numberOfCodesYAC[it.length] += 1 }
+        val numberOfCodesCbCrDC = Array(16) {0} // length
+        codes.forEach { numberOfCodesCbCrDC[it.value.length] += 1 }
+        sortedValues = codes.toList().sortedBy { (_, value) -> value.length }.toMap().keys // aka symbols
+        val huffmanTables3 = numberOfCodesCbCrDC.map { it.toByte() }.toByteArray() + sortedValues.map { it.toByte() }.toByteArray()
 
-
-        rootNode = HuffmanNode.encode(setCbCrDC.toIntArray(), frequenciesCbCrDC)
+        rootNode = HuffmanNode.encode(frequenciesCbCrAC.keys.toIntArray(), frequenciesCbCrAC.values.toIntArray())
         codes = HuffmanNode.getCodes(rootNode!!)
-        val numberOfCodesCbCrDC = Array(codes.size) {0} // length
-        codes.forEach { numberOfCodesCbCrDC[it.length] += 1 }
-
-        rootNode = HuffmanNode.encode(setCbCrAC.toIntArray(), frequenciesCbCrAC)
-        codes = HuffmanNode.getCodes(rootNode!!)
-        val numberOfCodesCbCrAC = Array(codes.size) {0} // length
-        codes.forEach { numberOfCodesCbCrAC[it.length] += 1 }
-
-        //очень вероятно, шо это надо переделать
-        val huffmanTables1 = numberOfCodesYDC.map { it.toByte() }.toByteArray() + setYDC.map { it.toByte() }.toByteArray()
-        val huffmanTables2 = numberOfCodesYAC.map { it.toByte() }.toByteArray() + setYAC.map { it.toByte() }.toByteArray()
-        val huffmanTables3 = numberOfCodesCbCrDC.map { it.toByte() }.toByteArray() + setCbCrDC.map { it.toByte() }.toByteArray()
-        val huffmanTables4 = numberOfCodesCbCrAC.map { it.toByte() }.toByteArray() + setCbCrAC.map { it.toByte() }.toByteArray()
+        val numberOfCodesCbCrAC = Array(162) {0} // length
+        codes.forEach { numberOfCodesCbCrAC[it.value.length] += 1 }
+        sortedValues = codes.toList().sortedBy { (_, value) -> value.length }.toMap().keys // aka symbols
+        val huffmanTables4 = numberOfCodesCbCrAC.map { it.toByte() }.toByteArray() + sortedValues.map { it.toByte() }.toByteArray()*/
 
 
         val stream = ByteStreamWriter()
-        val data = byteArrayOf()
-        yMCU.map { it.toByteArray() }.forEach { data + it }
-        cbMCU.map { it.toByteArray() }.forEach { data + it }
-        crMCU.map { it.toByteArray() }.forEach { data + it }
-
-        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xD8.toByte()))
-        writeApp(stream)
-        writeDQT(stream, yMCU.first().getQuantTables())
-        writeDHT(stream, huffmanTables1, 0x00.toByte())
-        writeDHT(stream, huffmanTables2, 0x10.toByte())
-        writeDHT(stream, huffmanTables3, 0x01.toByte())
-        writeDHT(stream, huffmanTables4, 0x11.toByte())
-        writeSOF(stream)
-        writeSOS(stream, data)
-        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+        val syncStream = MemorySyncStreamToByteArray {
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) //SOI - Start Of Image
+            writeApp(this)
+            writeDQT(this, yMCU.first().getQuantTable())
+            writeDHT(this, huffmanTables1, 0x00.toByte(), huffmanTables1.size)
+            writeDHT(this, huffmanTables2, 0x10.toByte(), huffmanTables2.size)
+            writeSOF(this, image)
+            writeSOS(this, yMCU, differencesDCCodes)
+            writeBytes(byteArrayOf(0xFF.toByte(), 0xD9.toByte())) //EOI - End Of Image
+        }
+//        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) //SOI - Start Of Image
+////        writeApp(stream)
+//        writeDQT(stream, yMCU.first().getQuantTable())
+////        writeDQT(stream, yMCU.first().getQuantTables())
+//        writeDHT(stream, huffmanTables1, 0x00.toByte(), huffmanTables1.size)
+//        writeDHT(stream, huffmanTables2, 0x10.toByte(), huffmanTables2.size)
+////        writeDHT(stream, huffmanTables3, 0x01.toByte())
+////        writeDHT(stream, huffmanTables4, 0x11.toByte())
+//        writeSOF(stream)
+//        writeSOS(stream, yMCU, differencesDCCodes)
+//        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xD9.toByte())) //EOI - End Of Image
 
         println("end")
 
-        return byteArrayOf()
+        return syncStream
     }
 
-    private fun writeSOS(stream: ByteStreamWriter, data: ByteArray) {
-        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xDA.toByte()))
-        stream.write2bytes(12)
-        stream.writeInt(3) //number of channels Y Cb Cr
-        stream.writeInt(1) // Y
-        stream.writeByte(0x00.toByte())
-        stream.writeInt(2) // Cb
-        stream.writeByte(0x11.toByte())
-        stream.writeInt(3) // Cr
-        stream.writeByte(0x11.toByte())
-        stream.writeInt(0)
-        stream.writeInt(63)
-        stream.writeInt(0)
-        stream.writeByteArray(data)
+    private fun writeSOS(stream: SyncStream, yMCU: List<Block>, differencesDCCodes: List<String>) {
+//        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xDA.toByte()))
+//        stream.write2bytes(5)
+//        stream.writeInt(1) //number of channels Y Cb Cr
+//        stream.writeByte(0x01.toByte()) // Y
+//        stream.writeByte(0x00.toByte())
+
+        stream.writeBytes(byteArrayOf(0xFF.toByte(), 0xDA.toByte()))
+        stream.write16BE(5)
+        stream.write8(1) //number of channels Y Cb Cr
+        stream.writeBytes(byteArrayOf(0x01.toByte(), 0x00.toByte())) // 01 - Y, 0. - tab for dc, .0 - tab for ac
+
+
+//        stream.writeInt(2) // Cb
+//        stream.writeByte(0x11.toByte())
+//        stream.writeInt(3) // Cr
+//        stream.writeByte(0x11.toByte())
+//        stream.writeInt(0)
+//        stream.writeInt(63)
+//        stream.writeInt(0)
+        var result = ""
+        yMCU.mapIndexed { index, block ->
+            result += makeResultData(differencesDCCodes[index], getCodeForAC(block.getAC()))
+        }
+        stream.write(result.chunked(8).map { convertBinaryToDecimal(it.toLong()).toByte() }.toByteArray())
     }
 
-    private fun writeSOF(stream: ByteStreamWriter) {
-        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xC0.toByte()))
-        stream.write2bytes(22)
-        stream.writeInt(8) //precision
-        stream.writeInt(height)
-        stream.writeInt(width)
-        stream.writeInt(3)
-        stream.writeInt(1) // component id
-        stream.writeByte(0x22.toByte()) // sampling factor
-        stream.writeByte(0x00.toByte()) // quantization table id
-        stream.writeInt(2) // component id
-        stream.writeByte(0x11.toByte()) // sampling factor
-        stream.writeByte(0x01.toByte()) // quantization table id
-        stream.writeInt(3) // component id
-        stream.writeByte(0x11.toByte()) // sampling factor
-        stream.writeByte(0x01.toByte()) // quantization table id
+    private fun writeSOF(stream: SyncStream, image: Image) {
+//        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xC0.toByte()))
+//        stream.write2bytes(11)
+//        stream.writeInt(8) //precision
+//        stream.write2bytes(height)
+//        stream.write2bytes(width)
+//        stream.writeInt(1) //components
+//        stream.writeInt(1) // component id
+//        stream.writeByte(0x11.toByte()) // sampling factor
+//        stream.writeByte(0x00.toByte()) // quantization table id
+
+//        stream.writeInt(2) // component id
+//        stream.writeByte(0x11.toByte()) // sampling factor
+//        stream.writeByte(0x01.toByte()) // quantization table id
+//        stream.writeInt(3) // component id
+//        stream.writeByte(0x11.toByte()) // sampling factor
+//        stream.writeByte(0x01.toByte()) // quantization table id
+
+        stream.writeBytes(byteArrayOf(0xFF.toByte(), 0xC0.toByte()))
+        stream.write16BE(11)
+        stream.write8(8) //precision
+        stream.write16BE(image.height)
+        stream.write16BE(image.width)
+        stream.write8(1) //components
+        stream.write8(1) // component id
+        stream.writeBytes(byteArrayOf(0x11.toByte(), 0x00.toByte())) // sampling factor, quantization table id
     }
 
-    private fun writeDHT(stream: ByteStreamWriter, data: ByteArray, byte: Byte) {
-        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xC4.toByte()))
-        stream.write2bytes(data.size + 3)
-        stream.writeByte(byte)
-        stream.writeByteArray(data)
+    private fun writeDHT(stream: SyncStream, data: ByteArray, byte: Byte, length: Int) {
+//        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xC4.toByte()))
+//        stream.write2bytes(length + 3)
+//        stream.writeByte(byte)
+//        stream.writeByteArray(data)
+
+        stream.writeBytes(byteArrayOf(0xFF.toByte(), 0xC4.toByte()))
+        stream.write16BE(length + 3)
+        stream.writeBytes(byteArrayOf(byte))
+        stream.writeBytes(data)
     }
 
-    private fun writeDQT(stream: ByteStreamWriter, data: ByteArray) {
-        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xDB.toByte()))
-        stream.writeByteArray(byteArrayOf(0x00.toByte(), 0x84.toByte())) // 84 - hexdecimal, 132 - decimal, 64*2+2 + 2(length)
-        stream.writeByteArray(data)
+    private fun writeDQT(stream: SyncStream, data: ByteArray) {
+//        stream.writeByteArray(byteArrayOf(0xFF.toByte(), 0xDB.toByte()))
+//        stream.write2bytes(67) // length
+//        stream.writeInt(0) // 0, 1 - Y, CbCr
+////        stream.writeByteArray(byteArrayOf(0x84.toByte(), 0x00.toByte())) // 84 - hexdecimal, 132 - decimal, 64*2+2 + 2(length)
+//        stream.writeByteArray(data)
+
+        stream.writeBytes(byteArrayOf(0xFF.toByte(), 0xDB.toByte()))
+        stream.write16BE(67)
+        stream.write8(0)
+        stream.writeBytes(data)
     }
 
-    private fun writeApp(stream: ByteStreamWriter) {
-        val JFIF = ByteArray(2)
-        JFIF[0] = 0xff.toByte()
-        JFIF[1] = 0xe0.toByte()
-        stream.writeByteArray(JFIF)
+    private fun writeApp(stream: SyncStream) {
+//        val JFIF = ByteArray(2)
+//        JFIF[0] = 0xff.toByte()
+//        JFIF[1] = 0xe0.toByte()
+//        stream.writeByteArray(JFIF)
+//        stream.writeBytes(byteArrayOf(0xFF.toByte(), 0xE0.toByte(), 0x00.toByte(), 0x10.toByte(), 0x4A.toByte(), 0x46.toByte(), 0x49.toByte(), 0x46.toByte(), 0x00.toByte(), 0x01.toByte(), 0x01.toByte(), 0x00.toByte(), 0x00.toByte(), 0x01.toByte(), 0x00.toByte(), 0x01.toByte(), 0x00.toByte(), 0x00.toByte(),))
+        stream.writeBytes(byteArrayOf(0xff.toByte(), 0xe0.toByte()))
     }
+
+
+    private fun makeResultData(dcCode: String, acCodes: String): String {
+//        println("dcCode: $dcCode")
+//        println("dcCodeSize: ${dcCode.length}")
+//        println("acCodes: $acCodes")
+//        println("acCodesSize: ${acCodes.length}")
+//        println((dcCode + acCodes) .chunked(8))
+        return (dcCode + acCodes) //.chunked(8).map { Integer.parseInt(it).toByte() }.toByteArray()
+    }
+
+    fun convertBinaryToDecimal(num: Long): Int {
+        var num = num
+        var decimalNumber = 0
+        var i = 0
+        var remainder: Long
+
+        while (num.toInt() != 0) {
+            remainder = num % 10
+            num /= 10
+            decimalNumber += (remainder * Math.pow(2.0, i.toDouble())).toInt()
+            ++i
+        }
+        return decimalNumber
+    }
+
+    private fun getCodeForDC(dc: Int): String {
+        val bits = getBits(dc)
+
+        val category = when {
+            dc > 0 -> getCategoryFromRange(dc)
+            dc < 0 -> getCategoryFromRange(dc * -1)
+            else -> 0
+        }
+        val code = getCodeByCategory(category)
+
+        return code + bits
+    }
+
+    private fun getCategoryFromRange(value: Int): Int {
+        val tmp = when{
+            value > 0 -> value
+            else -> value * -1
+        }
+
+        return when(tmp){
+            1 -> 1
+            2,3 -> 2
+            in 4..7 -> 3
+            in 8..15 -> 4
+            in 16..31 -> 5
+            in 32..63 -> 6
+            in 64..127 -> 7
+            in 128..255 -> 8
+            in 256..511 -> 9
+            in 512..1023 -> 10
+            else -> 0
+        }
+    }
+
+
+    private fun getBits(value: Int): String {
+        val bits = when{
+            value > 0 -> return Integer.toBinaryString(value)
+            value < 0 -> {
+                val tmp = -1 * value
+                (1..10).forEach {
+                    if (tmp < 2.0.pow(it.toDouble())){
+                        return Integer.toBinaryString(tmp.inv()).takeLast(it)
+                    }
+                }
+            }
+            else -> return ""
+        }
+
+        return bits.toString()
+    }
+
+    private fun getCodeByCategory(category: Int): String? {
+        val table = hashMapOf(
+            0 to "00",
+            1 to "010",
+            2 to "011",
+            3 to "100",
+            4 to "101",
+            5 to "110",
+            6 to "1110",
+            7 to "11110",
+            8 to "111110",
+            9 to "1111110",
+            10 to "11111110",
+            11 to "111111110",
+        )
+
+        return table[category]
+    }
+
+    private fun getCodeForAC(ac: List<Int>): String {
+        val pairs: List<Pair<Int, Int>> = makePairs(ac) // List<Pair<zero number, value>>
+        val rrrrssss = mutableListOf<Pair<Int, Int>>() //Pair<zero number/RRRR, category/SSSS>
+        pairs.forEach { rrrrssss.add(Pair(it.first, getCategoryFromRange(it.second) )) }
+        val codes = mutableListOf<String>()
+        rrrrssss.forEach { codes.add(getCodeByRunSize(it)) }
+        val bits = mutableListOf<String>()
+        pairs.forEach { bits.add(getBits(it.second)) }
+
+        var result = ""
+        (0 until bits.size).forEach { result += codes[it] + bits[it] } //переделать на sequence?
+        result += "1010" //(EOB)
+
+        return result
+    }
+
+    private fun makePairs(ac: List<Int>): List<Pair<Int, Int>>{
+        var zeroCount = 0
+        val result = mutableListOf<Pair<Int, Int>>()
+        ac.forEach { value ->
+            when(value){
+                0 -> zeroCount++
+                else -> {
+                    when {
+                        zeroCount > 16 -> {
+                            val count = zeroCount / 16
+                            (1..count).forEach { _ -> result.add(Pair(15,0)) }
+                            result.add(Pair(zeroCount-(16*count),value))
+                            zeroCount = 0
+                        }
+                        else -> {
+                            result.add(Pair(zeroCount,value))
+                            zeroCount = 0
+                        }
+                    }
+                }
+            }
+        }
+
+        return result
+    }
+
+    private fun getCodeByRunSize(pair: Pair<Int, Int>): String =
+        when(pair){
+            Pair(0,0) -> "1010" // EOB
+            Pair(15,0) -> "11111111001" //ZRL
+            Pair(0,1) -> "00"
+            Pair(0,2) -> "01"
+            Pair(0,3) -> "100"
+            Pair(0,4) -> "1011"
+            Pair(0,5) -> "11010"
+            Pair(0,6) -> "1111000"
+            Pair(0,7) -> "11111000"
+            Pair(0,8) -> "1111110110"
+            Pair(0,9) -> "1111111110000010"
+            Pair(0,10)-> "1111111110000011"
+            Pair(1,1) -> "1100"
+            Pair(1,2) -> "11011"
+            Pair(1,3) -> "1111001"
+            Pair(1,4) -> "111110110"
+            Pair(1,5) -> "11111110110"
+            Pair(1,6) -> "1111111110000100"
+            Pair(1,7) -> "1111111110000101"
+            Pair(1,8) -> "1111111110000110"
+            Pair(1,9) -> "1111111110000111"
+            Pair(1,10)-> "1111111110001000"
+            Pair(2,1) -> "11100"
+            Pair(2,2) -> "11111001"
+            Pair(2,3) -> "1111110111"
+            Pair(2,4) -> "111111110100"
+            Pair(2,5) -> "1111111110001001"
+            Pair(2,6) -> "1111111110001010"
+            Pair(2,7) -> "1111111110001011"
+            Pair(2,8) -> "1111111110001100"
+            Pair(2,9) -> "1111111110001101"
+            Pair(2,10)-> "1111111110001110"
+            Pair(3,1) -> "111010"
+            Pair(3,2) -> "111110111"
+            Pair(3,3) -> "111111110101"
+            Pair(3,4) -> "1111111110001111"
+            Pair(3,5) -> "1111111110010000"
+            Pair(3,6) -> "1111111110010001"
+            Pair(3,7) -> "1111111110010010"
+            Pair(3,8) -> "1111111110010011"
+            Pair(3,9) -> "1111111110010100"
+            Pair(3,10)-> "1111111110010101"
+            Pair(4,1) -> "111011"
+            Pair(4,2) -> "1111111000"
+            Pair(4,3) -> "1111111110010110"
+            Pair(4,4) -> "1111111110010111"
+            Pair(4,5) -> "1111111110011000"
+            Pair(4,6) -> "1111111110011001"
+            Pair(4,7) -> "1111111110011010"
+            Pair(4,8) -> "1111111110011011"
+            Pair(4,9) -> "1111111110011100"
+            Pair(4,10)-> "1111111110011101"
+            Pair(5,1) -> "1111010"
+            Pair(5,2) -> "11111110111"
+            Pair(5,3) -> "1111111110011110"
+            Pair(5,4) -> "1111111110011111"
+            Pair(5,5) -> "1111111110100000"
+            Pair(5,6) -> "1111111110100001"
+            Pair(5,7) -> "1111111110100010"
+            Pair(5,8) -> "1111111110100011"
+            Pair(5,9) -> "1111111110100100"
+            Pair(5,10)-> "1111111110100101"
+            Pair(6,1) -> "1111011"
+            Pair(6,2) -> "111111110110"
+            Pair(6,3) -> "1111111110100110"
+            Pair(6,4) -> "1111111110100111"
+            Pair(6,5) -> "1111111110101000"
+            Pair(6,6) -> "1111111110101001"
+            Pair(6,7) -> "1111111110101010"
+            Pair(6,8) -> "1111111110101011"
+            Pair(6,9) -> "1111111110101100"
+            Pair(6,10)-> "1111111110101101"
+            Pair(7,1) -> "11111010"
+            Pair(7,2) -> "111111110111"
+            Pair(7,3) -> "1111111110101110"
+            Pair(7,4) -> "1111111110101111"
+            Pair(7,5) -> "1111111110110000"
+            Pair(7,6) -> "1111111110110001"
+            Pair(7,7) -> "1111111110110010"
+            Pair(7,8) -> "1111111110110011"
+            Pair(7,9) -> "1111111110110100"
+            Pair(7,10)-> "1111111110110101"
+            Pair(8,1) -> "111111000"
+            Pair(8,2) -> "111111111000000"
+            Pair(8,3) -> "1111111110110110"
+            Pair(8,4) -> "1111111110110111"
+            Pair(8,5) -> "1111111110111000"
+            Pair(8,6) -> "1111111110111001"
+            Pair(8,7) -> "1111111110111010"
+            Pair(8,8) -> "1111111110111011"
+            Pair(8,9) -> "1111111110111100"
+            Pair(8,10)-> "1111111110111101"
+            Pair(9,1) -> "111111001"
+            Pair(9,2) -> "1111111110111110"
+            Pair(9,3) -> "1111111110111111"
+            Pair(9,4) -> "1111111111000000"
+            Pair(9,5) -> "1111111111000001"
+            Pair(9,6) -> "1111111111000010"
+            Pair(9,7) -> "1111111111000011"
+            Pair(9,8) -> "1111111111000100"
+            Pair(9,9) -> "1111111111000101"
+            Pair(9,10)-> "1111111111000110"
+            Pair(10,1) -> "111111010"
+            Pair(10,2) -> "1111111111000111"
+            Pair(10,3) -> "1111111111001000"
+            Pair(10,4) -> "1111111111001001"
+            Pair(10,5) -> "1111111111001010"
+            Pair(10,6) -> "1111111111001011"
+            Pair(10,7) -> "1111111111001100"
+            Pair(10,8) -> "1111111111001101"
+            Pair(10,9) -> "1111111111001110"
+            Pair(10,10)-> "1111111111001111"
+            Pair(11,1) -> "1111111001"
+            Pair(11,2) -> "1111111111010000"
+            Pair(11,3) -> "1111111111010001"
+            Pair(11,4) -> "1111111111010010"
+            Pair(11,5) -> "1111111111010011"
+            Pair(11,6) -> "1111111111010100"
+            Pair(11,7) -> "1111111111010101"
+            Pair(11,8) -> "1111111111010110"
+            Pair(11,9) -> "1111111111010111"
+            Pair(11,10)-> "1111111111011000"
+            Pair(12,1) -> "1111111010"
+            Pair(12,2) -> "1111111111011001"
+            Pair(12,3) -> "1111111111011010"
+            Pair(12,4) -> "1111111111011011"
+            Pair(12,5) -> "1111111111011100"
+            Pair(12,6) -> "1111111111011101"
+            Pair(12,7) -> "1111111111011110"
+            Pair(12,8) -> "1111111111011111"
+            Pair(12,9) -> "1111111111100000"
+            Pair(12,10)-> "1111111111100001"
+            Pair(13,1) -> "11111111000"
+            Pair(13,2) -> "1111111111100010"
+            Pair(13,3) -> "1111111111100011"
+            Pair(13,4) -> "1111111111100100"
+            Pair(13,5) -> "1111111111100101"
+            Pair(13,6) -> "1111111111100110"
+            Pair(13,7) -> "1111111111100111"
+            Pair(13,8) -> "1111111111101000"
+            Pair(13,9) -> "1111111111101001"
+            Pair(13,10)-> "1111111111101010"
+            Pair(14,1) -> "1111111111101011"
+            Pair(14,2) -> "1111111111101100"
+            Pair(14,3) -> "1111111111101101"
+            Pair(14,4) -> "1111111111101110"
+            Pair(14,5) -> "1111111111101111"
+            Pair(14,6) -> "1111111111110000"
+            Pair(14,7) -> "1111111111110001"
+            Pair(14,8) -> "1111111111110010"
+            Pair(14,9) -> "1111111111110011"
+            Pair(14,10)-> "1111111111110100"
+            Pair(15,1) -> "1111111111110101"
+            Pair(15,2) -> "1111111111110110"
+            Pair(15,3) -> "1111111111110111"
+            Pair(15,4) -> "1111111111111000"
+            Pair(15,5) -> "1111111111111001"
+            Pair(15,6) -> "1111111111111010"
+            Pair(15,7) -> "1111111111111011"
+            Pair(15,8) -> "1111111111111100"
+            Pair(15,9) -> "1111111111111101"
+            Pair(15,10)-> "1111111111111110"
+            else -> ""
+        }
+
 
     class HuffmanNode : Comparable<HuffmanNode> {
         var freq = 0
@@ -342,17 +725,21 @@ object Jpeg : ImageDecoder {
                 return rootNode
             }
 
-            private val codes = mutableListOf<String>()
-            fun getCodes(root: HuffmanNode): List<String> {
+//            private val codes = mutableListOf<String>()
+            private val codesHashMap = HashMap<Int, String>()
+//            fun getCodes(root: HuffmanNode): List<String> {
+            fun getCodes(root: HuffmanNode): HashMap<Int, String> {
                 makeCodes(root, "")
-                return codes.toList()
+//                return codes.toList()
+                return codesHashMap
             }
             private fun makeCodes(root: HuffmanNode, s: String){
                 if (root.left == null
                     && root.right == null
-                    && root.int != -1
+//                    && root.int != -1
                 ) {
-                    codes.add(s)
+//                    codes.add(s)
+                    codesHashMap[root.int] = s
                     return
                 }
 
@@ -736,13 +1123,11 @@ class Block {
         return data[height][width]
     }
 
-    fun getDC(): Int {
-        return zzData.first()
-    }
+    fun getQuantTable(): ByteArray = qY.map { it.toList() }.flatten().map { it.toByte() }.toByteArray()
 
-    fun getQuantTables(): ByteArray {
-        return quantizationTable.flatten().map { it.toList() }.flatten().map { it.toByte() }.toByteArray()
-    }
+    fun getQuantTables(): ByteArray =
+        quantizationTable.flatten().map { it.toList() }.flatten().map { it.toByte() }.toByteArray()
+
 
     fun dctTransform() {
         var ci: Double
@@ -786,30 +1171,27 @@ class Block {
     }
 
     fun zigzag() {
-        val zz1d = mutableListOf<Int>()
-        val data1d = mutableListOf<Int>()
         for (i in 0 until 8) {
             for (j in 0 until 8) {
-                zz1d.add(zigzag[i][j])
-                data1d.add(this.get(i, j))
+                zzData[zigzag[i][j]] = data[i][j]
             }
-        }
-
-        for (i in 0..63) {
-            zzData[i] = data1d[zz1d[i]]
         }
     }
 
-    fun getAC(): Set<Int> {
-        return zzData.drop(0).toSet()
+    fun getDC(): Int {
+        return zzData.first()
+    }
+
+    fun getAC(): List<Int> {
+        return zzData.drop(0)
     }
 
     fun getZZData(): Array<Int> {
         return zzData
     }
 
-    fun toByteArray(): ByteArray {
-        return zzData.map { it.toByte() }.toByteArray()
+    fun zzDataToByteArray(): ByteArray {
+        return zzData.foldIndexed(ByteArray(zzData.size)) { i, a, v -> a.apply { set(i, v.toByte()) } }
     }
 }
 
